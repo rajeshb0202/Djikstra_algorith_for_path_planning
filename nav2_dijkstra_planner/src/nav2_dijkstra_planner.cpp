@@ -3,6 +3,7 @@
 #include <cmath>
 #include <memory>
 #include <string>
+#include <algorithm>
 
 #include "nav2_dijkstra_planner/nav2_dijkstra_planner.hpp"
 
@@ -293,15 +294,153 @@ bool DijkstraGlobalPlanner::dijkstraShortestPath(
 
   // put start_index along with it's g_cost into open_list
   open_list.push_back(std::make_pair(start_cell_index, 0.0));
-
+  
   RCLCPP_INFO(node_->get_logger(), "Dijkstra: Done with initialization");
 
   /** YOUR CODE STARTS HERE */
 
+    /*Phase 1 starts here ....*/
+    //   main loop executes while the open list is not empty or the goal is not found
+    while (open_list.size() != 0) 
+    {
+        // std::sort(open_list.begin(), open_list.end(), [](const std::pair<int, double>& a, const std::pair<int, double>& b) { return a.second < b.second;});
+        
+        // //reverse the open list so that the last item will have the small g_cost value. The last element form the vector can be easily popped out.
+        // std::reverse(open_list.begin(), open_list.end());
+
+        // // get the node with the lowest g_cost from the open list
+        // current_node = open_list.back().first;
+        // open_list.pop_back();// sort the open list based on the g_cost of each node
+        
+
+
+        // finding the node with the minimum g_cost in the open_list and setting that node as current node and deleting that node form the open_list
+        auto it = std::min_element(open_list.begin(), open_list.end(), [](const auto& a, const auto& b) {
+            return a.second < b.second;
+        });
+        if (it != open_list.end()) {
+            current_node = it->first;
+            open_list.erase(it); // Remove the element after processing
+        }
+
+        // add the current node to the closed list to avoid revisiting it
+        closed_list.insert(current_node);
+
+        // check if the current node is the goal node. if yes, then exit the loop and go to second phase
+        if (current_node == goal_cell_index) 
+        {
+            path_found = true;
+            break;
+        }
+
+        // get the neighbors of the current node
+        std::unordered_map<int, double> neighbours = find_neighbors(current_node, costmap_flat);
+
+        // loop over the neighbours
+        for (auto neighbour : neighbours) 
+        {
+            // get the neighbour node index
+            int neighbour_index = neighbour.first;
+
+            // get the step_cost of moving to the neighbour node
+            double step_cost = neighbour.second;
+
+            // check if the neighbour node is already visited by searching in the closed list. if yes, then skip this node.
+            if (closed_list.find(neighbour_index) != closed_list.end()) 
+            {
+                continue;
+            }
+
+            // calculate the g_cost of the neighbour node by adding the step cost to the parent node
+            double g_cost = g_costs[current_node] + step_cost;
+
+            // check if the neighournode is in the open list.
+            bool in_open_list = false;
+            for (auto node : open_list) 
+            {
+                if (node.first == neighbour_index) 
+                {
+                    in_open_list = true;
+                    break;
+                }
+            }        
+
+
+            // case:1 neighbour node is already in the open list
+            if (in_open_list) 
+            {
+                // check if the new g_cost is less than the previous g_cost of the neighbour node
+                if (g_cost < g_costs[neighbour_index]) 
+                {
+                    // update the g_cost of the neighbour node
+                    g_costs[neighbour_index] = g_cost;
+                    // update the parent of the neighbour node
+                    parents[neighbour_index] = current_node;
+                    // update the neighbour node in the open list
+                    for (auto &node : open_list) 
+                    {
+                        if (node.first == neighbour_index) 
+                        {
+                            node.second = g_cost;
+                            break;
+                        }
+                    }
+                }
+            }                           //end of if
+
+            // case:2 if the neighbour node is not in the open list, then add the neighbour node to the open list
+            else
+            {
+                // update the g_cost of the neighbour node
+                g_costs[neighbour_index] = g_cost;
+                // update the parent of the neighbour node
+                parents[neighbour_index] = current_node;
+                // add the neighbour node to the open list
+                open_list.push_back(std::make_pair(neighbour_index, g_cost));
+
+            }                           //end of else 
+        }                               //end of for loop iterated over neighbours
+    }                                   //end of while loop
+
+    RCLCPP_INFO(node_->get_logger(), "Dijkstra: Done traversing in the open list.");
+    
+    /*Phase 1 ends here ....*/
+
+
+
+    /*Phase 2 starts here - Computing the shortest path*/
+    // check if the goal was found
+    if (path_found)
+    {
+        // get the goal node index
+        int current_node = goal_cell_index;
+
+        // loop until the start node is reached
+        while (current_node != start_cell_index) 
+        {
+            // add the current node to the shortest path
+            shortest_path.push_back(current_node);
+
+            // get the parent of the current node
+            current_node = parents[current_node];
+        }
+
+        // add the start node to the shortest path
+        shortest_path.push_back(start_cell_index);
+
+        // reverse the shortest path to get the correct order
+        std::reverse(shortest_path.begin(), shortest_path.end());
+        RCLCPP_INFO(node_->get_logger(), "Done reconstructing the path");
+    }
+    /*Phase 2 ends here*/
+
+
   /** YOUR CODE ENDS HERE */
 
-  return true;
+  return path_found;
 }
+
+
 
 void DijkstraGlobalPlanner::fromWorldToGrid(float &x, float &y) {
   x = static_cast<size_t>((x - origin_x_) / resolution_);
