@@ -277,6 +277,9 @@ bool DijkstraGlobalPlanner::dijkstraShortestPath(
   // empty data container that will store nodes and associated g_costs
   std::vector<std::pair<int, double>> open_list;
 
+  // empty set to contain only the nodes that are present in the open_list
+  std::unordered_set<int> open_list_set;
+
   // empty set to keep track of already visited/closed nodes
   std::unordered_set<int> closed_list;
 
@@ -294,7 +297,8 @@ bool DijkstraGlobalPlanner::dijkstraShortestPath(
 
   // put start_index along with it's g_cost into open_list
   open_list.push_back(std::make_pair(start_cell_index, 0.0));
-  
+  open_list_set.insert(start_cell_index);
+
   RCLCPP_INFO(node_->get_logger(), "Dijkstra: Done with initialization");
 
   /** YOUR CODE STARTS HERE */
@@ -303,30 +307,22 @@ bool DijkstraGlobalPlanner::dijkstraShortestPath(
     //   main loop executes while the open list is not empty or the goal is not found
     while (open_list.size() != 0) 
     {
-        // std::sort(open_list.begin(), open_list.end(), [](const std::pair<int, double>& a, const std::pair<int, double>& b) { return a.second < b.second;});
-        
-        // //reverse the open list so that the last item will have the small g_cost value. The last element form the vector can be easily popped out.
-        // std::reverse(open_list.begin(), open_list.end());
-
-        // // get the node with the lowest g_cost from the open list
-        // current_node = open_list.back().first;
-        // open_list.pop_back();// sort the open list based on the g_cost of each node
-        
-
-
+   
         // finding the node with the minimum g_cost in the open_list and setting that node as current node and deleting that node form the open_list
         auto it = std::min_element(open_list.begin(), open_list.end(), [](const auto& a, const auto& b) {
             return a.second < b.second;
         });
         if (it != open_list.end()) {
             current_node = it->first;
-            open_list.erase(it); // Remove the element after processing
+            open_list_set.erase(current_node);   //Remove the node from the open_list_set
+            open_list.erase(it); // Remove the node from the open_list too
+           
         }
 
         // add the current node to the closed list to avoid revisiting it
         closed_list.insert(current_node);
 
-        // check if the current node is the goal node. if yes, then exit the loop and go to second phase
+        // check if the current node is the goal node. if yes, then exit the loop and go to second step
         if (current_node == goal_cell_index) 
         {
             path_found = true;
@@ -356,13 +352,9 @@ bool DijkstraGlobalPlanner::dijkstraShortestPath(
 
             // check if the neighournode is in the open list.
             bool in_open_list = false;
-            for (auto node : open_list) 
+            if (open_list_set.find(neighbour_index) != open_list_set.end()) 
             {
-                if (node.first == neighbour_index) 
-                {
-                    in_open_list = true;
-                    break;
-                }
+                in_open_list = true;
             }        
 
 
@@ -397,6 +389,7 @@ bool DijkstraGlobalPlanner::dijkstraShortestPath(
                 parents[neighbour_index] = current_node;
                 // add the neighbour node to the open list
                 open_list.push_back(std::make_pair(neighbour_index, g_cost));
+                open_list_set.insert(neighbour_index);
 
             }                           //end of else 
         }                               //end of for loop iterated over neighbours
